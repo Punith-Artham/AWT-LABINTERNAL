@@ -1,0 +1,156 @@
+const express=require('express');
+const mongoose=require('mongoose');
+var app=express();
+const jwt=require("jsonwebtoken")
+app.use(express.json());
+const bcrypt=require("bcrypt");
+
+ 
+
+
+const jwtkey = 'cvr';
+mongoose.connect("mongodb://127.0.0.1:27017/internalDb")
+.then(()=>{
+    console.log("database connection established");
+})
+.catch(err=>{
+    console.log(err);
+})
+
+const UserSchema=new mongoose.Schema({
+    name:{type:String,required:true},
+    email:{type:String,required:true,unique:true},
+    password:{type:String,required:true}
+})
+const User=mongoose.model('User',UserSchema);
+
+
+
+app.post("/api/register",(req,res)=>{
+    const hashpassword=bcrypt.hashSync(req.body.password,10);
+   const user=new User({
+    name:req.body.name,
+    email:req.body.email,
+    password:hashpassword
+   })
+   user.save()
+   .then((data)=>{
+    res.status(201).json(data)
+   })
+   .catch(err=>{
+    res.status(400).json(err.message);
+   })
+})
+
+
+app.post("/api/login",(req,res)=>{
+    const email=req.body.email;
+    const password=req.body.password;
+    User.findOne({email:email})
+    .then((userdata)=>{
+        if(userdata){
+            const decode=bcrypt.compareSync(password,userdata.password);
+            if(decode){
+                const token=jwt.sign({email:email},jwtkey,{expiresIn:"1h"})
+                    res.status(201).json({token:token})
+            }
+        }
+    })
+    .catch(err=>{
+        res.status(400).json(err.message);
+
+    })
+
+})
+
+
+
+
+function authenticateToken(req,res,next){
+    const authHeader=req.headers["authorization"];
+    const token=authHeader && authHeader.split(" ")[1];
+    if(token==null) return res.json({message:"Access denied"});
+    jwt.verify(token,jwtkey,(err,user)=>{
+        if(err) return res.json({message:"Access denied"});
+        req.user=user;
+        next();
+    })
+}
+
+
+const productSchema=new mongoose.Schema({
+    name:{type:String,required:true},
+    description:{type:String},
+    price:{type:Number,required:true},
+    category:{type:String},
+    stock:{type:Number,default:0}
+})
+
+const Product=mongoose.model('Product',productSchema);
+
+app.get("/api/products",authenticateToken,(req,res)=>{
+    Product.find()
+    .then((productdata)=>{
+        res.status(200).json(productdata);
+    })
+    .catch((err)=>{
+        res.status(404).json(err.message);
+    })
+})
+
+
+app.get("/api/products/:id",authenticateToken,(req,res)=>{
+    Product.findById(req.params.id)
+    .then((productdata)=>{
+        if(!productdata){
+            res.status(404).json({message:"Product not found"})
+        }
+        else{
+            res.status(201).json(productdata);}
+        })
+        .catch((err)=>{
+            res.status(401).json(err.message);
+        })
+    })
+    
+    
+    
+    app.post("/api/products",(req,res)=>{
+        const product=new Product({
+            name:req.body.name,
+            description:req.body.description,
+            price:req.body.price,
+            category:req.body.category,
+            stock:req.body.stock
+        });
+        product.save()
+        .then((data)=>{
+            res.status(201).json(data);
+        })
+        .catch((err)=>{
+            res.status(401).json(err.message);
+        })
+    })
+    
+    
+    app.put("/api/products/:id",(req,res)=>{
+        Product.findByIdAndUpdate(req.params.id,req.body,{new:true,runValidators:true})
+        .then((data)=>{
+            res.status(200).json(data);
+        })
+        .catch((err)=>{
+            res.status(401).json(err.message);
+        })
+    })
+    app.delete("/api/products/:id",(req,res)=>{
+        Product.findByIdAndDelete(req.params.id)
+        .then((data)=>{
+            res.status(200).json(data);
+        })
+        .catch((err)=>{
+            res.status(401).json(err.message);
+        })
+    })
+    app.listen(3000,()=>{
+        console.log("server is listeninig at port 3000");
+    })
